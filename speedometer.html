@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#05060a">
+<title>VELO — GPS Speedometer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#05060a; --panel:#0d1017; --line:#1c2230; --txt:#e8ecf4; --dim:#7a8396;
+    --accent:#38bdf8; --glow:rgba(56,189,248,.45);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    background:radial-gradient(ellipse at 50% 0%, color-mix(in srgb,var(--accent) 14%, transparent), transparent 60%), var(--bg);
+    color:var(--txt); font-family:Inter,system-ui,sans-serif; min-height:100%;
+    padding:calc(env(safe-area-inset-top) + 14px) 14px calc(env(safe-area-inset-bottom) + 18px);
+    transition:background .6s;
+  }
+  .wrap{max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+  header{display:flex;align-items:center;justify-content:space-between}
+  .logo{font-family:Orbitron;font-weight:900;letter-spacing:.25em;font-size:18px}
+  .logo span{color:var(--accent);text-shadow:0 0 12px var(--glow)}
+  .pill{font-size:11px;font-weight:700;letter-spacing:.08em;padding:6px 10px;border-radius:999px;
+    border:1px solid var(--line);background:var(--panel);display:flex;align-items:center;gap:6px;color:var(--dim)}
+  .dot{width:8px;height:8px;border-radius:50%;background:#555}
+  .pill.ok .dot{background:#4ade80;box-shadow:0 0 8px #4ade80}
+  .pill.search .dot{background:#facc15;animation:blink 1s infinite}
+  .pill.demo .dot{background:#c084fc;box-shadow:0 0 8px #c084fc}
+  .pill.err .dot{background:#f87171}
+  @keyframes blink{50%{opacity:.2}}
+
+  .modes{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:2px}
+  .modes::-webkit-scrollbar{display:none}
+  .mode{flex:0 0 auto;border:1px solid var(--line);background:var(--panel);color:var(--dim);
+    border-radius:14px;padding:9px 12px;font:600 13px Inter;display:flex;gap:6px;align-items:center;cursor:pointer;transition:.2s}
+  .mode .ic{font-size:17px}
+  .mode.on{color:var(--txt);border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset,0 0 18px var(--glow);
+    background:color-mix(in srgb,var(--accent) 12%, var(--panel))}
+
+  .gauge-box{position:relative;aspect-ratio:1/1;width:100%;max-width:420px;margin:0 auto}
+  svg.gauge{width:100%;height:100%;overflow:visible}
+  .readout{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;padding-top:8%}
+  .speed{font-family:Orbitron;font-weight:900;font-size:clamp(64px,22vw,104px);line-height:1;
+    text-shadow:0 0 24px var(--glow);font-variant-numeric:tabular-nums}
+  .unit{font-family:Orbitron;font-weight:700;font-size:14px;letter-spacing:.3em;color:var(--accent);margin-top:6px;pointer-events:auto;cursor:pointer;
+    border:1px solid var(--line);padding:5px 10px 5px 14px;border-radius:999px;background:rgba(0,0,0,.35)}
+  .sub{margin-top:14px;font-size:12px;color:var(--dim);letter-spacing:.1em;display:flex;gap:14px}
+  .sub b{color:var(--txt);font-weight:700}
+
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px}
+  .stat .k{font-size:10px;letter-spacing:.14em;color:var(--dim);font-weight:700;text-transform:uppercase}
+  .stat .v{font-family:Orbitron;font-weight:700;font-size:20px;margin-top:6px;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .stat .v small{font-family:Inter;font-size:11px;color:var(--dim);font-weight:600;margin-left:3px}
+
+  .chart{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px}
+  .chart .k{font-size:10px;letter-spacing:.14em;color:var(--dim);font-weight:700;display:flex;justify-content:space-between}
+  canvas{width:100%;height:90px;display:block;margin-top:8px}
+
+  .controls{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px}
+  button.btn{border:none;border-radius:16px;padding:16px;font:700 15px Inter;letter-spacing:.05em;cursor:pointer;transition:transform .1s}
+  button.btn:active{transform:scale(.97)}
+  .go{background:var(--accent);color:#04121b;box-shadow:0 0 24px var(--glow)}
+  .go.stop{background:#f43f5e;color:#fff;box-shadow:0 0 24px rgba(244,63,94,.45)}
+  .sec{background:var(--panel);color:var(--txt);border:1px solid var(--line)!important}
+  .msg{font-size:12px;color:var(--dim);text-align:center;line-height:1.5;min-height:18px}
+  .msg a{color:var(--accent)}
+  .hud-flash{animation:flash .5s}
+  @keyframes flash{0%{filter:brightness(2)}100%{filter:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">VEL<span>O</span></div>
+    <div class="pill" id="pill"><span class="dot"></span><span id="pillTxt">READY</span></div>
+  </header>
+
+  <div class="modes" id="modes"></div>
+
+  <div class="gauge-box">
+    <svg class="gauge" viewBox="0 0 300 300" id="gauge">
+      <defs>
+        <linearGradient id="arcGrad" x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0%" stop-color="var(--accent)" stop-opacity=".55"/>
+          <stop offset="100%" stop-color="var(--accent)"/>
+        </linearGradient>
+        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <circle cx="150" cy="150" r="138" fill="none" stroke="#11151e" stroke-width="2"/>
+      <path id="track" fill="none" stroke="#161b26" stroke-width="16" stroke-linecap="round"/>
+      <path id="maxArc" fill="none" stroke="var(--accent)" stroke-opacity=".18" stroke-width="16" stroke-linecap="round"/>
+      <path id="arc" fill="none" stroke="url(#arcGrad)" stroke-width="16" stroke-linecap="round" filter="url(#glow)"/>
+      <g id="ticks"></g>
+      <g id="needle" style="transition:transform .35s cubic-bezier(.3,1.4,.5,1);transform-origin:150px 150px">
+        <polygon points="145,58 155,58 150,16" fill="#fff" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round" filter="url(#glow)"/>
+      </g>
+    </svg>
+    <div class="readout">
+      <div class="speed" id="speed">0</div>
+      <div class="unit" id="unitBtn">MPH ⇄</div>
+      <div class="sub"><span>HDG <b id="hdg">—</b></span><span>ALT <b id="alt">—</b></span></div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="stat"><div class="k">Top</div><div class="v" id="sMax">0<small></small></div></div>
+    <div class="stat"><div class="k">Average</div><div class="v" id="sAvg">0<small></small></div></div>
+    <div class="stat"><div class="k">Distance</div><div class="v" id="sDist">0.00<small></small></div></div>
+    <div class="stat"><div class="k">Time</div><div class="v" id="sTime">0:00</div></div>
+    <div class="stat"><div class="k" id="paceK">Pace</div><div class="v" id="sPace">—</div></div>
+    <div class="stat"><div class="k">GPS ±</div><div class="v" id="sAcc">—</div></div>
+  </div>
+
+  <div class="chart">
+    <div class="k"><span>SPEED HISTORY</span><span id="chartMax"></span></div>
+    <canvas id="cv"></canvas>
+  </div>
+
+  <div class="controls">
+    <button class="btn go" id="goBtn">START</button>
+    <button class="btn sec" id="resetBtn">RESET</button>
+    <button class="btn sec" id="demoBtn">DEMO</button>
+  </div>
+  <div class="msg" id="msg">Pick a mode, hit START and allow location access.</div>
+</div>
+
+<script>
+(() => {
+  // ---------- config ----------
+  const MODES = [
+    {id:'walk',  name:'Walk',  ic:'🚶', max:10,   color:'#4ade80'},
+    {id:'run',   name:'Run',   ic:'🏃', max:30,   color:'#a3e635'},
+    {id:'bike',  name:'Bike',  ic:'🚴', max:60,   color:'#facc15'},
+    {id:'skate', name:'Skate', ic:'🛹', max:40,   color:'#fb923c'},
+    {id:'car',   name:'Car',   ic:'🚗', max:240,  color:'#38bdf8'},
+    {id:'moto',  name:'Moto',  ic:'🏍️', max:300,  color:'#f43f5e'},
+    {id:'train', name:'Train', ic:'🚄', max:350,  color:'#818cf8'},
+    {id:'boat',  name:'Boat',  ic:'🚤', max:100,  color:'#22d3ee'},
+    {id:'plane', name:'Plane', ic:'✈️', max:1000, color:'#e879f9'},
+  ]; // max in km/h
+  const UNITS = [
+    {id:'mph', label:'MPH', k:2.236936, dist:'mi', dk:0.000621371},
+    {id:'kmh', label:'KM/H', k:3.6, dist:'km', dk:0.001},
+    {id:'kt',  label:'KNOTS', k:1.943844, dist:'nm', dk:0.000539957},
+    {id:'ms',  label:'M/S', k:1, dist:'km', dk:0.001},
+  ];
+  const store = {
+    get(k,d){try{const v=localStorage.getItem('velo_'+k);return v==null?d:JSON.parse(v)}catch(e){return d}},
+    set(k,v){try{localStorage.setItem('velo_'+k,JSON.stringify(v))}catch(e){}}
+  };
+
+  let mode = MODES.find(m=>m.id===store.get('mode','car')) || MODES[4];
+  let unit = UNITS.find(u=>u.id===store.get('unit','mph')) || UNITS[0];
+
+  // ---------- state ----------
+  let running=false, demo=false, watchId=null, demoTimer=null, wakeLock=null;
+  let speed=0, shown=0, top=0, dist=0, movingTime=0, elapsed=0, lastFix=null, lastTick=null;
+  let history=[];
+  const $ = id => document.getElementById(id);
+
+  // ---------- gauge geometry ----------
+  const CX=150, CY=150, R=118, A0=135, SWEEP=270;
+  const pt = (a,r=R) => { const t=(a-90)*Math.PI/180; return [CX+r*Math.cos(t), CY+r*Math.sin(t)]; };
+  const arcPath = (a1,a2,r=R) => {
+    if (a2-a1 < .01) a2 = a1 + .01;
+    const [x1,y1]=pt(a1+90,r), [x2,y2]=pt(a2+90,r);
+    return `M${x1} ${y1} A${r} ${r} 0 ${a2-a1>180?1:0} 1 ${x2} ${y2}`;
+  };
+  $('track').setAttribute('d', arcPath(A0, A0+SWEEP));
+
+  function niceMax(v){
+    const p = Math.pow(10, Math.floor(Math.log10(v)));
+    for (const m of [1,1.2,1.5,2,2.5,3,4,5,6,8,10]) if (m*p >= v) return m*p;
+    return 10*p;
+  }
+  let gaugeMax = 100;
+  function buildTicks(){
+    gaugeMax = niceMax(mode.max * unit.k / 3.6);
+    const g = $('ticks'); g.innerHTML='';
+    const major = 10, minor = 5;
+    for (let i=0;i<=major*minor;i++){
+      const a = A0 + SWEEP*i/(major*minor) + 90;
+      const isMaj = i%minor===0;
+      const [x1,y1]=pt(a, R-14), [x2,y2]=pt(a, R-(isMaj?28:20));
+      const l = document.createElementNS('http://www.w3.org/2000/svg','line');
+      l.setAttribute('x1',x1);l.setAttribute('y1',y1);l.setAttribute('x2',x2);l.setAttribute('y2',y2);
+      l.setAttribute('stroke', isMaj?'#9aa3b5':'#3a4252'); l.setAttribute('stroke-width', isMaj?2:1);
+      g.appendChild(l);
+      if (isMaj){
+        const [tx,ty]=pt(a, R-42);
+        const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+        t.setAttribute('x',tx);t.setAttribute('y',ty+4);t.setAttribute('text-anchor','middle');
+        t.setAttribute('fill','#7a8396');t.setAttribute('font-size','10');t.setAttribute('font-family','Orbitron');
+        const val = gaugeMax*i/(major*minor);
+        t.textContent = val>=1000 ? (val/1000)+'k' : (Number.isInteger(val)?val:val.toFixed(1));
+        g.appendChild(t);
+      }
+    }
+  }
+
+  // ---------- UI build ----------
+  function applyTheme(){
+    document.documentElement.style.setProperty('--accent', mode.color);
+    document.documentElement.style.setProperty('--glow', mode.color+'73');
+    document.querySelector('meta[name=theme-color]').content = '#05060a';
+  }
+  function buildModes(){
+    const box=$('modes'); box.innerHTML='';
+    MODES.forEach(m=>{
+      const b=document.createElement('button');
+      b.className='mode'+(m===mode?' on':'');
+      b.innerHTML=`<span class="ic">${m.ic}</span>${m.name}`;
+      b.onclick=()=>{ mode=m; store.set('mode',m.id); buildModes(); applyTheme(); buildTicks(); render(true); };
+      box.appendChild(b);
+    });
+  }
+  $('unitBtn').onclick=()=>{
+    unit = UNITS[(UNITS.indexOf(unit)+1)%UNITS.length]; store.set('unit',unit.id);
+    buildTicks(); render(true);
+  };
+
+  function setPill(cls, txt){ const p=$('pill'); p.className='pill '+cls; $('pillTxt').textContent=txt; }
+  const fmt = (v,d=0)=> (v*unit.k).toFixed(d);
+  function fmtTime(s){ s=Math.floor(s); const h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=s%60;
+    return h? `${h}:${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}` : `${m}:${String(x).padStart(2,'0')}`; }
+
+  // ---------- render ----------
+  function render(force){
+    shown += (speed - shown) * 0.25;
+    if (Math.abs(speed-shown) < 0.01) shown = speed;
+    const disp = shown*unit.k;
+    $('speed').textContent = disp < 10 && unit.id==='ms' ? disp.toFixed(1) : Math.round(disp);
+    $('unitBtn').textContent = unit.label+' ⇄';
+
+    const frac = Math.min(disp/gaugeMax, 1);
+    $('arc').setAttribute('d', arcPath(A0, A0+SWEEP*frac));
+    $('maxArc').setAttribute('d', arcPath(A0, A0+SWEEP*Math.min(top*unit.k/gaugeMax,1)));
+    $('needle').style.transform = `rotate(${-135 + SWEEP*frac}deg)`;
+
+    const u = `<small>${unit.label.toLowerCase()}</small>`;
+    $('sMax').innerHTML = fmt(top)+u;
+    $('sAvg').innerHTML = (movingTime>0? fmt(dist/movingTime) : '0')+u;
+    $('sDist').innerHTML = (dist*unit.dk).toFixed(dist*unit.dk<100?2:1)+`<small>${unit.dist}</small>`;
+    $('sTime').textContent = fmtTime(elapsed);
+
+    // pace for foot/bike modes, else ETA-free "G-force-ish" accel
+    if (['walk','run'].includes(mode.id)){
+      $('paceK').textContent='Pace';
+      const perUnit = unit.dist==='mi'?1609.34:1000;
+      $('sPace').innerHTML = speed>0.5 ? fmtTime(perUnit/speed)+`<small>/${unit.dist}</small>` : '—';
+    } else {
+      $('paceK').textContent='Moving';
+      $('sPace').textContent = fmtTime(movingTime);
+    }
+    drawChart();
+  }
+
+  function drawChart(){
+    const cv=$('cv'), dpr=window.devicePixelRatio||1, w=cv.clientWidth, h=cv.clientHeight;
+    if (cv.width!==w*dpr){ cv.width=w*dpr; cv.height=h*dpr; }
+    const c=cv.getContext('2d'); c.setTransform(dpr,0,0,dpr,0,0); c.clearRect(0,0,w,h);
+    const mx = Math.max(gaugeMax/unit.k*0.25, ...history, 0.1);
+    $('chartMax').textContent = history.length? 'PEAK '+fmt(Math.max(...history))+' '+unit.label : '';
+    c.strokeStyle='#161b26'; c.lineWidth=1;
+    for(let i=1;i<4;i++){ c.beginPath(); c.moveTo(0,h*i/4); c.lineTo(w,h*i/4); c.stroke(); }
+    if (history.length<2) return;
+    const step = w/(120-1);
+    const x0 = w - (history.length-1)*step;
+    const grad=c.createLinearGradient(0,0,0,h);
+    grad.addColorStop(0, mode.color+'66'); grad.addColorStop(1, mode.color+'00');
+    c.beginPath();
+    history.forEach((v,i)=>{ const x=x0+i*step, y=h-(v/mx)*(h-6)-2; i?c.lineTo(x,y):c.moveTo(x,y); });
+    c.strokeStyle=mode.color; c.lineWidth=2; c.lineJoin='round'; c.shadowColor=mode.color; c.shadowBlur=8; c.stroke();
+    c.shadowBlur=0; c.lineTo(w,h); c.lineTo(x0,h); c.closePath(); c.fillStyle=grad; c.fill();
+  }
+
+  // ---------- GPS ----------
+  function haversine(a,b){
+    const R=6371000, toR=Math.PI/180;
+    const dLat=(b.lat-a.lat)*toR, dLon=(b.lon-a.lon)*toR;
+    const s=Math.sin(dLat/2)**2+Math.cos(a.lat*toR)*Math.cos(b.lat*toR)*Math.sin(dLon/2)**2;
+    return 2*R*Math.asin(Math.sqrt(s));
+  }
+  function bearing(a,b){
+    const toR=Math.PI/180, y=Math.sin((b.lon-a.lon)*toR)*Math.cos(b.lat*toR);
+    const x=Math.cos(a.lat*toR)*Math.sin(b.lat*toR)-Math.sin(a.lat*toR)*Math.cos(b.lat*toR)*Math.cos((b.lon-a.lon)*toR);
+    return (Math.atan2(y,x)/toR+360)%360;
+  }
+  const compass = d => ['N','NE','E','SE','S','SW','W','NW'][Math.round(d/45)%8];
+
+  function onFix(p){
+    const c=p.coords, fix={lat:c.latitude, lon:c.longitude, t:p.timestamp, acc:c.accuracy};
+    setPill(c.accuracy<=20?'ok':'search', c.accuracy<=20?'GPS LOCKED':'WEAK SIGNAL');
+    $('sAcc').innerHTML = Math.round(c.accuracy)+'<small>m</small>';
+    if (c.altitude!=null) $('alt').textContent = unit.id==='mph' ? Math.round(c.altitude*3.28084)+' ft' : Math.round(c.altitude)+' m';
+
+    let v = (c.speed!=null && !isNaN(c.speed)) ? c.speed : null;
+    if (lastFix){
+      const d = haversine(lastFix, fix), dt = (fix.t-lastFix.t)/1000;
+      if (dt>0){
+        if (v==null) v = (c.accuracy<50) ? d/dt : 0;
+        if (v>0.4 && c.accuracy<50 && d < 1000*dt){ dist += d; movingTime += dt; }
+        if (d>2){ const h = (c.heading!=null && !isNaN(c.heading)) ? c.heading : bearing(lastFix,fix);
+          $('hdg').textContent = Math.round(h)+'° '+compass(h); }
+      }
+    }
+    speed = Math.max(0, v||0);
+    if (speed < 0.3) speed = 0;               // kill GPS jitter when standing still
+    if (c.accuracy<40) top = Math.max(top, speed);
+    lastFix = fix;
+    $('msg').textContent = '';
+  }
+  function onErr(e){
+    // Only a permission denial is fatal. "Unavailable" / "timeout" are often temporary
+    // (first fix, indoors, tunnels) — keep the watch alive and keep trying.
+    if (e.code!==1){
+      setPill('search','SEARCHING');
+      $('msg').textContent = 'Still looking for GPS… step outside or near a window.';
+      return;
+    }
+    setPill('err','NO GPS');
+    $('msg').innerHTML = 'Location is blocked. ' + (window.top!==window.self
+      ? 'This viewer doesn\'t allow GPS — open the hosted file directly in Safari/Chrome.'
+      : 'Turn on Location for your browser in Settings, then reload.') + ' Tap <b>DEMO</b> to preview.';
+    stop();
+  }
+
+  async function grabWake(){
+    try{ if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); }catch(e){}
+  }
+
+  function start(){
+    if (!('geolocation' in navigator) || !window.isSecureContext){
+      setPill('err','NO GPS');
+      $('msg').innerHTML='GPS only works when this page is opened from an <b>https://</b> link. Tap <b>DEMO</b> to preview.';
+      return;
+    }
+    demo=false; running=true; lastFix=null;
+    setPill('search','SEARCHING');
+    $('msg').textContent='Getting a GPS lock… works best outdoors.';
+    try{
+      watchId = navigator.geolocation.watchPosition(onFix, onErr, {enableHighAccuracy:true, maximumAge:0, timeout:15000});
+    }catch(e){ onErr({code:1}); return; }
+    grabWake(); updateBtns();
+  }
+  function startDemo(){
+    stop(); demo=true; running=true; setPill('demo','DEMO MODE');
+    $('msg').textContent='Simulated ride — tap STOP to end.';
+    let t=0, cur=0;
+    const vmax = mode.max/3.6;
+    demoTimer=setInterval(()=>{
+      t+=1;
+      const target = vmax*(0.45 + 0.3*Math.sin(t/9) + 0.15*Math.sin(t/3.3)) ;
+      cur += (target-cur)*0.15 + (Math.random()-.5)*vmax*0.02;
+      speed=Math.max(0,cur); top=Math.max(top,speed); dist+=speed; movingTime+=1;
+      const h=(t*7)%360; $('hdg').textContent=Math.round(h)+'° '+compass(h);
+      $('sAcc').innerHTML='4<small>m</small>';
+      $('alt').textContent = mode.id==='plane' ? Math.round(Math.min(35000, t*120))+' ft' : '182 m';
+    },1000);
+    updateBtns();
+  }
+  function stop(){
+    running=false; demo=false;
+    if (watchId!=null){ navigator.geolocation.clearWatch(watchId); watchId=null; }
+    clearInterval(demoTimer); demoTimer=null;
+    try{ wakeLock && wakeLock.release(); }catch(e){} wakeLock=null;
+    speed=0; updateBtns();
+    if ($('pill').className.indexOf('err')<0) setPill('', 'PAUSED');
+  }
+  function reset(){
+    top=0; dist=0; movingTime=0; elapsed=0; history=[]; lastFix=null; speed=0; shown=0;
+    $('hdg').textContent='—'; $('alt').textContent='—'; $('sAcc').textContent='—';
+    document.querySelector('.gauge-box').classList.remove('hud-flash'); void document.body.offsetWidth;
+    document.querySelector('.gauge-box').classList.add('hud-flash');
+    render(true);
+  }
+  function updateBtns(){
+    const g=$('goBtn'); g.textContent = running ? 'STOP' : 'START'; g.classList.toggle('stop', running);
+    $('demoBtn').textContent = demo ? 'LIVE' : 'DEMO';
+  }
+  $('goBtn').onclick = () => running ? stop() : start();
+  $('resetBtn').onclick = reset;
+  $('demoBtn').onclick = () => demo ? (stop(), start()) : startDemo();
+  document.addEventListener('visibilitychange', ()=>{ if (running && !demo && document.visibilityState==='visible') grabWake(); });
+
+  // ---------- loops ----------
+  setInterval(()=>{
+    const now=performance.now();
+    if (running && lastTick) elapsed += (now-lastTick)/1000;
+    lastTick=now;
+    if (running){ history.push(speed); if (history.length>120) history.shift(); }
+  },1000);
+  (function loop(){ render(); requestAnimationFrame(loop); })();
+
+  applyTheme(); buildModes(); buildTicks(); render(true);
+})();
+</script>
+</body>
+</html>
